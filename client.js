@@ -167,12 +167,16 @@ window.__ModuleLoader__.load({
           // Remove the row immediately. The Host also detaches the live
           // Workspace entry, so a later list refresh will not bring it back.
           const row = document.querySelector(`[data-row-key="session:${item.sessionId}"]`);
+          const isCurrent = row?.getAttribute('aria-selected') === 'true'
+            || location.href.includes(item.sessionId);
           if (row) {
             row.style.display = 'none';
             row.setAttribute('aria-hidden', 'true');
           }
           closeConfirm();
-          if (!row) location.reload();
+          // If the deleted Session is open in the right pane, navigate away;
+          // otherwise its Conversation keeps rendering a deleted Session.
+          if (isCurrent || !row) location.href = '/';
         } catch (error) {
           setError(error.message || String(error));
           setBusy(false);
