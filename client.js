@@ -31,8 +31,22 @@ window.__ModuleLoader__.load({
       return value;
     }
 
+    function TrashIcon() {
+      return h('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round',
+        strokeLinejoin: 'round', 'aria-hidden': true, style: { flex: 'none' },
+      },
+        h('path', { d: 'M4 7h16' }),
+        h('path', { d: 'M9 7V4h6v3' }),
+        h('path', { d: 'M6 7l1 13h10l1-13' }),
+        h('path', { d: 'M10 11v5M14 11v5' })
+      );
+    }
+
     function DeleteSessionMenuItem({ sessionId, displayTitle, useMenuOpenState }) {
       const [, setMenuOpen] = useMenuOpenState();
+      const [hover, setHover] = React.useState(false);
       const onClick = (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -44,8 +58,27 @@ window.__ModuleLoader__.load({
         role: 'menuitem',
         title: '删除会话或保留文件移出列表',
         onClick,
-        style: { color: 'var(--dsw-alias-color-danger, #b3261e)' },
-      }, '删除会话…');
+        onMouseEnter: () => setHover(true),
+        onMouseLeave: () => setHover(false),
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          width: '100%',
+          minHeight: '32px',
+          boxSizing: 'border-box',
+          padding: '6px 10px',
+          border: 'none',
+          borderRadius: '4px',
+          background: hover ? 'var(--dsw-alias-interactive-bg-hover, rgba(20, 30, 40, .06))' : 'transparent',
+          color: 'inherit',
+          font: 'inherit',
+          fontSize: '13px',
+          lineHeight: '18px',
+          textAlign: 'left',
+          cursor: 'pointer',
+        },
+      }, h(TrashIcon), h('span', null, '删除会话…'));
     }
 
     function ConfirmOverlay() {
@@ -96,39 +129,54 @@ window.__ModuleLoader__.load({
 
       const overlay = {
         position: 'fixed', inset: 0, zIndex: 100000,
-        background: 'rgba(14, 10, 8, 0.62)',
+        background: 'rgba(27, 31, 36, .35)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '24px',
       };
       const panel = {
-        width: 'min(480px, 100%)', boxSizing: 'border-box',
-        background: 'var(--dsw-alias-bg-elevated, #211b16)',
-        color: 'var(--dsw-alias-fg-primary, #f1e7d8)',
-        border: '1px solid var(--dsw-alias-border, #5a4634)',
-        borderRadius: '10px', padding: '20px',
-        boxShadow: '0 24px 80px rgba(0,0,0,.5)',
+        width: 'min(430px, 100%)', boxSizing: 'border-box',
+        background: 'var(--dsw-alias-bg-elevated, #ffffff)',
+        color: 'var(--dsw-alias-label-primary, #1f2328)',
+        border: '1px solid var(--dsw-alias-border-l4, #d0d7de)',
+        borderRadius: '8px', padding: '20px',
+        boxShadow: '0 8px 28px rgba(31, 35, 40, .16)',
       };
-      const row = { display: 'flex', alignItems: 'flex-start', gap: '9px', margin: '14px 0', lineHeight: 1.55 };
-      const note = { fontSize: '12px', opacity: 0.78, lineHeight: 1.6, margin: '8px 0 0' };
-      const actions = { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' };
-      const cancelStyle = { padding: '7px 14px', borderRadius: '6px', border: '1px solid var(--dsw-alias-border, #5a4634)', background: 'transparent', color: 'inherit', cursor: busy ? 'wait' : 'pointer' };
-      const deleteStyle = { padding: '7px 16px', borderRadius: '6px', border: '1px solid #8f2a1a', background: '#8f2a1a', color: '#fff5e8', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 };
+      const titleStyle = { fontSize: '16px', fontWeight: 600, lineHeight: '22px' };
+      const textStyle = { margin: '8px 0 0', fontSize: '13px', lineHeight: '20px' };
+      const row = { display: 'flex', alignItems: 'flex-start', gap: '8px', margin: '16px 0', lineHeight: 1.5 };
+      const note = { color: 'var(--dsw-alias-label-secondary, #57606a)', fontSize: '12px', lineHeight: '18px', margin: '6px 0 0' };
+      const actions = { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' };
+      const baseButton = {
+        height: '32px', padding: '0 14px', borderRadius: '6px',
+        font: 'inherit', fontSize: '13px', cursor: busy ? 'wait' : 'pointer',
+      };
+      const cancelStyle = {
+        ...baseButton,
+        background: 'var(--dsw-alias-button-elevated-fill, #f6f8fa)',
+        border: '1px solid var(--dsw-alias-border-l4, #d0d7de)',
+        color: 'var(--dsw-alias-label-primary, #1f2328)',
+      };
+      const deleteStyle = {
+        ...baseButton,
+        border: '1px solid var(--dsw-alias-state-error-primary, #cf222e)',
+        background: 'var(--dsw-alias-state-error-primary, #cf222e)',
+        color: '#ffffff',
+        opacity: busy ? 0.6 : 1,
+      };
 
       return h('div', { style: overlay, onClick: (event) => { if (event.target === event.currentTarget && !busy) closeConfirm(); } },
         h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': '删除会话', style: panel, onClick: (event) => event.stopPropagation() },
-          h('div', { style: { fontSize: '17px', fontWeight: 600, color: 'var(--dsw-alias-color-danger, #d98b73)' } }, '删除会话'),
-          h('p', { style: { margin: '10px 0 0', lineHeight: 1.6 } }, `即将从列表移除「${item.title || item.sessionId}」。`),
+          h('div', { style: titleStyle }, '删除会话'),
+          h('p', { style: textStyle }, `即将从列表移除「${item.title || item.sessionId}」。`),
           h('label', { style: row },
             h('input', {
-              type: 'checkbox',
-              checked: deleteFiles,
-              disabled: busy,
+              type: 'checkbox', checked: deleteFiles, disabled: busy,
               onChange: (event) => setDeleteFiles(event.target.checked),
-              style: { marginTop: '3px' },
+              style: { marginTop: '2px' },
             }),
             h('span', null,
-              h('b', null, '同时删除会话文件'),
-              h('div', { style: { ...note, margin: '3px 0 0' } },
+              h('b', { style: { fontSize: '13px', fontWeight: 600 } }, '同时删除会话文件'),
+              h('div', { style: note },
                 deleteFiles
                   ? '会话日志/附件目录会被永久删除，无法恢复。'
                   : '会话目录会移到 DSH_HOME/deleted-sessions/ 保留，可手动恢复；列表记录与缓存仍会清理。'
@@ -136,7 +184,7 @@ window.__ModuleLoader__.load({
             )
           ),
           h('div', { style: note },
-            '无论是否勾选，都会清理：投影缓存、workspace.json 中的归档/固定/分组引用。',
+            '无论是否勾选，都会清理投影缓存、workspace.json 中的归档/固定/分组引用。',
             h('br'),
             '正在运行的会话请先停止，不要删除当前会话。'
           ),
