@@ -209,6 +209,11 @@ window.__ModuleLoader__.load({
           if (Array.isArray(result.warnings) && result.warnings.length) {
             console.warn('[session-delete]', result.warnings.join('; '));
           }
+          // The Conversation root exposes the currently mounted Session id.
+          const activeSession = document.querySelector('[data-conversation-session]')?.getAttribute('data-conversation-session');
+          const isCurrent = activeSession === item.sessionId
+            || document.querySelector(`[data-row-key="session:${item.sessionId}"]`)?.getAttribute('aria-selected') === 'true'
+            || location.href.includes(item.sessionId);
           // Remove the row immediately. The Host also detaches the live
           // Workspace entry, so a later list refresh will not bring it back.
           const row = document.querySelector(`[data-row-key="session:${item.sessionId}"]`);
@@ -219,14 +224,14 @@ window.__ModuleLoader__.load({
           hideSession(item.sessionId);
           if (!deleteFiles) {
             const keptPath = Array.isArray(result.keptDirs) ? result.keptDirs[0] : '';
-            setResultInfo({ keptPath, sessionId: item.sessionId });
+            setResultInfo({ keptPath, sessionId: item.sessionId, isCurrent });
             setBusy(false);
             return;
           }
           closeConfirm();
-          // Always leave the current Conversation: a deleted Session must not
-          // stay mounted on the right, even when the sidebar row is gone.
-          leaveDeletedConversation();
+          // Only a deleted *active* Conversation needs to be switched away.
+          // Deleting another row must leave the current Conversation alone.
+          if (isCurrent) leaveDeletedConversation();
         } catch (error) {
           setError(error.message || String(error));
           setBusy(false);
@@ -322,7 +327,11 @@ window.__ModuleLoader__.load({
                 type: 'button', style: cancelStyle,
                 onClick: () => { navigator.clipboard?.writeText(resultInfo.keptPath).catch(() => {}); },
               }, '复制路径') : null,
-              h('button', { type: 'button', style: deleteStyle, onClick: () => { closeConfirm(); leaveDeletedConversation(); } }, '关闭')
+              h('button', { type: 'button', style: deleteStyle, onClick: () => {
+                const wasCurrent = resultInfo.isCurrent;
+                closeConfirm();
+                if (wasCurrent) leaveDeletedConversation();
+              } }, '关闭')
             )
           )
         );
@@ -388,6 +397,8 @@ window.__ModuleLoader__.load({
             ) : null
           ) : null,
           h('div', { style: note },
+            'DSH_HOME：Windows 默认 %USERPROFILE%\\.dsh；macOS/Linux 默认 ~/.dsh。',
+            h('br'),
             '无论是否勾选，都会清理投影缓存、workspace.json 中的归档/固定/分组引用。',
             h('br'),
             '正在运行的会话请先停止，不要删除当前会话。'
