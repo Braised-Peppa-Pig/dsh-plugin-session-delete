@@ -124,6 +124,58 @@ window.__ModuleLoader__.load({
       }, h(TrashIcon), h('span', null, '删除会话'));
     }
 
+    function RepairWorkspaceIcon() {
+      return h('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round',
+        strokeLinejoin: 'round', 'aria-hidden': true, style: { flex: 'none' },
+      },
+        h('path', { d: 'M3 7h6l2 2h10v10H3z' }),
+        h('path', { d: 'M12 15v-4M10 13l2-2 2 2' })
+      );
+    }
+
+    function RepairWorkspaceMenuItem({ sessionId, displayTitle, useMenuOpenState }) {
+      const [, setMenuOpen] = useMenuOpenState();
+      const [hover, setHover] = React.useState(false);
+      const [busy, setBusy] = React.useState(false);
+      const onClick = async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setMenuOpen(false);
+        setBusy(true);
+        try {
+          const response = await fetch('/api/session-delete/reattach', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionId }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+          location.reload();
+        } catch (error) {
+          window.alert(`修复工作区归属失败：${error.message || error}`);
+          setBusy(false);
+        }
+      };
+      return h('button', {
+        type: 'button', role: 'menuitem',
+        title: `按 cwd 把「${displayTitle || sessionId}」挂回匹配的 Workspace`,
+        disabled: busy,
+        onClick,
+        onMouseEnter: () => setHover(true),
+        onMouseLeave: () => setHover(false),
+        style: {
+          display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+          minHeight: '32px', boxSizing: 'border-box', padding: '6px 10px',
+          border: 'none', borderRadius: '4px',
+          background: hover ? 'var(--dsw-alias-interactive-bg-hover, rgba(20, 30, 40, .06))' : 'transparent',
+          color: 'inherit', font: 'inherit', fontSize: '13px', lineHeight: '18px',
+          textAlign: 'left', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1,
+        },
+      }, h(RepairWorkspaceIcon), h('span', null, busy ? '正在修复…' : '修复工作区归属'));
+    }
+
     function ConfirmOverlay() {
       const item = useConfirmState();
       const [deleteFiles, setDeleteFiles] = React.useState(true);
@@ -135,6 +187,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState(false);
       const [error, setError] = React.useState('');
       const [resultInfo, setResultInfo] = React.useState(null);
+      const [dshHome, setDshHome] = React.useState('');
 
       React.useEffect(() => {
         if (item) {
@@ -147,7 +200,18 @@ window.__ModuleLoader__.load({
           setBusy(false);
           setError('');
           setResultInfo(null);
+          setDshHome('');
         }
+      }, [item && item.requestId]);
+
+      React.useEffect(() => {
+        if (!item) return;
+        let alive = true;
+        fetch('/api/session-delete/info', { method: 'GET' })
+          .then((response) => response.ok ? response.json() : null)
+          .then((data) => { if (alive && data?.ok && data.result?.home) setDshHome(data.result.home); })
+          .catch(() => {});
+        return () => { alive = false; };
       }, [item && item.requestId]);
 
       React.useEffect(() => {
@@ -314,7 +378,8 @@ window.__ModuleLoader__.load({
           h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': '会话已移除', style: panel },
             h('div', { style: titleStyle }, '会话已移除'),
             h('p', { style: textStyle }, '会话已从列表移除，文件没有删除，而是保留在下面这个目录：'),
-            h('code', { style: { ...filePathStyle, display: 'block', marginTop: '10px', padding: '8px', background: 'var(--dsw-alias-bg-inset, #f6f8fa)', borderRadius: '6px', overflowWrap: 'anywhere', fontSize: '11px' } },
+            h('div', { style: { ...note, margin: '10px 0 0', fontWeight: 600 } }, '完整路径（从盘符开始）'),
+            h('code', { style: { ...filePathStyle, display: 'block', marginTop: '4px', padding: '8px', background: 'var(--dsw-alias-bg-inset, #f6f8fa)', borderRadius: '6px', overflowWrap: 'anywhere', fontSize: '11px' } },
               resultInfo.keptPath || 'DSH_HOME/deleted-sessions/<sessionId>-<timestamp>/<workspace>/<sessionId>/'
             ),
             h('div', { style: { ...note, marginTop: '12px' } },
@@ -397,7 +462,9 @@ window.__ModuleLoader__.load({
             ) : null
           ) : null,
           h('div', { style: note },
-            'DSH_HOME：Windows 默认 %USERPROFILE%\\.dsh；macOS/Linux 默认 ~/.dsh。',
+            dshHome
+              ? `DSH_HOME：${dshHome}`
+              : 'DSH_HOME：Windows 默认 %USERPROFILE%\\.dsh；macOS/Linux 默认 ~/.dsh。',
             h('br'),
             '无论是否勾选，都会清理投影缓存、workspace.json 中的归档/固定/分组引用。',
             h('br'),
@@ -424,6 +491,11 @@ window.__ModuleLoader__.load({
           id: 'session-delete',
           order: 900,
         }, DeleteSessionMenuItem));
+        ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register({
+          name: 'sidebar.workspaces.session.menu.item',
+          id: 'session-repair-workspace',
+          order: 910,
+        }, RepairWorkspaceMenuItem));
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({
           name: 'shell.overlay',
           id: 'session-delete-confirm',
