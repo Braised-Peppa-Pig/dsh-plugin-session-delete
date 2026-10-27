@@ -64,7 +64,7 @@ export async function deleteSessionData(sessionId, options = {}) {
   const { home, sessions, storages } = roots(options);
   const keepFiles = options.deleteFiles === false;
   const result = { id, deleteFiles: !keepFiles, removedDirs: [], keptDirs: [], removedCaches: [], workspaceUpdated: false, warnings: [], sessionsRoot: sessions };
-  const keptRoot = keepFiles ? path.join(home, "deleted-sessions", `${id}-${Date.now()}`) : null;
+  const keptRoot = keepFiles ? path.join(options.keptRoot || path.dirname(sessions), "deleted-sessions", `${id}-${Date.now()}`) : null;
 
   let entries = [];
   let foundSessionDirs = 0;
