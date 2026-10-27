@@ -170,4 +170,4 @@ package.json      DSH bundle/client 清单
 
 ## 许可
 
-目前还没有声明 License。公开分发前如需明确复用条款，请补充一个。
+使用 **MIT License**，详见 [LICENSE](LICENSE)。
