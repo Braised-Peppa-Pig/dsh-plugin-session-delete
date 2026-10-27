@@ -126,14 +126,24 @@ dsh plugin --profile "$DSH_PROFILE" add "file:/path/to/dsh-plugin-session-delete
 
 ## 恢复
 
-如果不勾选删除文件，目录会保留在：
+如果不勾选删除日志/附件目录，目录会保留在：
 
 ```text
 DSH_HOME/deleted-sessions/<sessionId>-<timestamp>/<workspace>/<sessionId>/
 ```
 
-把 `<sessionId>` 目录移回 `DSH_HOME/sessions/<workspace>/` 即可恢复日志；
-投影缓存和工作区引用已被清理，需要 DSH 重新生成或重新添加。
+把最内层 `<sessionId>` 目录移回 `DSH_HOME/sessions/<workspace>/`。
+
+然后二选一：
+
+- 重启 DSH：插件会读取删除时写入的 `.session-delete.json` 恢复标记，
+  在会话目录回到 `sessions/` 后把它挂回原 Workspace；
+- 或在会话 `...` 菜单里点 **修复工作区归属**（用于没有恢复标记的旧删除）。
+
+投影缓存会重新生成。只把日志目录移回 `sessions/` **不会**恢复 Workspace
+成员关系；DSH 是按 `workspace.sessionIds` 分组的，不是按物理目录分组。
+所以没有重新 attach 的会话会显示在 **未分组**。
+
 
 ## 兼容性
 
