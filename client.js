@@ -117,7 +117,10 @@ window.__ModuleLoader__.load({
           // Remove the row immediately. The Host also detaches the live
           // Workspace entry, so a later list refresh will not bring it back.
           const row = document.querySelector(`[data-row-key="session:${item.sessionId}"]`);
-          if (row) row.remove();
+          if (row) {
+            row.style.display = 'none';
+            row.setAttribute('aria-hidden', 'true');
+          }
           closeConfirm();
           if (!row) location.reload();
         } catch (error) {
