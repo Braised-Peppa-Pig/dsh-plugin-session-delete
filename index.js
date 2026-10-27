@@ -254,6 +254,81 @@ export async function deleteProjectFiles(sessionId, requested, options = {}) {
 }
 
 /**
+ * Reattach a restored Session to the Workspace whose path matches its header cwd.
+ */
+export async function reattachSession(sessionId, options = {}) {
+  const id = safeId(sessionId);
+  if (!id) throw Object.assign(new Error("非法会话 ID"), { status: 400 });
+  if (!options.registry) throw Object.assign(new Error("Workspace registry 不可用"), { status: 500 });
+  const { sessions } = roots(options);
+  const dirs = await findSessionDirs(sessions, id);
+  if (dirs.length === 0) throw Object.assign(new Error(`未找到会话目录 ${id}`), { status: 404 });
+
+  let cwd = null;
+  for (const dir of dirs) {
+    const text = await readSessionLog(dir).catch(() => null);
+    if (!text) continue;
+    try {
+      const header = JSON.parse(text.split(/\r?\n/, 1)[0]);
+      if (typeof header.cwd === "string") { cwd = header.cwd; break; }
+    } catch { /* try the next directory */ }
+  }
+  if (!cwd) throw Object.assign(new Error("会话 header 没有 cwd，无法归组"), { status: 400 });
+
+  let realCwd;
+  try { realCwd = await fs.realpath(cwd); } catch { realCwd = path.resolve(cwd); }
+  const canonical = (value) => {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  const workspace = options.registry.list().find((candidate) => {
+    try { return canonical(candidate.path) === canonical(realCwd); } catch { return false; }
+  });
+  if (!workspace) {
+    throw Object.assign(new Error(`没有路径匹配 ${realCwd} 的 Workspace`), { status: 404 });
+  }
+  if (Array.isArray(workspace.sessionIds) && workspace.sessionIds.includes(id)) {
+    return { sessionId: id, workspaceId: workspace.id, workspacePath: workspace.path, alreadyAttached: true };
+  }
+  await workspace.attachSession(id);
+  return { sessionId: id, workspaceId: workspace.id, workspacePath: workspace.path, alreadyAttached: false };
+}
+
+/**
+ * Reattach Sessions that this plugin deleted with file retention, once their
+ * log directory has been moved back into `sessions/`.
+ */
+export async function restoreMarkedSessions(options = {}) {
+  if (!options.registry) return { attached: [], skipped: [] };
+  const { sessions } = roots(options);
+  const deletedRoot = path.join(options.keptRoot || path.dirname(sessions), "deleted-sessions");
+  let entries = [];
+  try { entries = await fs.readdir(deletedRoot, { withFileTypes: true }); }
+  catch (error) { if (error && error.code === "ENOENT") return { attached: [], skipped: [] }; throw error; }
+
+  const attached = [];
+  const skipped = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const markerFile = path.join(deletedRoot, entry.name, ".session-delete.json");
+    let marker;
+    try { marker = JSON.parse(await fs.readFile(markerFile, "utf8")); }
+    catch { continue; }
+    const id = safeId(marker.sessionId);
+    if (!id) continue;
+    try {
+      if ((await findSessionDirs(sessions, id)).length === 0) { skipped.push({ id, reason: "not-restored" }); continue; }
+      const result = await reattachSession(id, options);
+      attached.push(result);
+      await fs.rm(markerFile, { force: true });
+    } catch (error) {
+      skipped.push({ id, reason: error.message });
+    }
+  }
+  return { attached, skipped };
+}
+
+/**
  * Delete one session from disk and from the workspace index.
  * Exported so it can be tested without mounting the Host plugin.
  */
@@ -267,6 +342,12 @@ export async function deleteSessionData(sessionId, options = {}) {
     workspaceUpdated: false, warnings: [], sessionsRoot: sessions,
   };
   const keptRoot = keepFiles ? path.join(options.keptRoot || path.dirname(sessions), "deleted-sessions", `${id}-${Date.now()}`) : null;
+  let ownerWorkspace = null;
+  if (options.registry && typeof options.registry.list === "function") {
+    try {
+      ownerWorkspace = options.registry.list().find((workspace) => Array.isArray(workspace.sessionIds) && workspace.sessionIds.includes(id)) || null;
+    } catch { /* registry availability is optional for the fallback path */ }
+  }
 
   let projectResult = null;
   if (Array.isArray(options.projectFiles) && options.projectFiles.length > 0) {
@@ -295,8 +376,24 @@ export async function deleteSessionData(sessionId, options = {}) {
     }
   }
 
-  const cache = path.join(storages, "session_projcache", "sessions", `${id}.json`);
-  try {
+  if (keepFiles && keptRoot && result.keptDirs.length > 0) {
+    try {
+      await fs.mkdir(keptRoot, { recursive: true });
+      await writeJsonAtomic(path.join(keptRoot, ".session-delete.json"), {
+        version: 1,
+        sessionId: id,
+        workspaceId: ownerWorkspace?.id ?? null,
+        workspacePath: ownerWorkspace?.path ?? null,
+        deletedAt: new Date().toISOString(),
+        keptDirs: result.keptDirs,
+      });
+      result.restoreMarker = path.join(keptRoot, ".session-delete.json");
+    } catch (error) {
+      result.warnings.push(`写入恢复标记失败：${error.message}`);
+    }
+  }
+
+  const cache = path.join(storages, "session_projcache", "sessions", `${id}.json`);  try {
     await fs.rm(cache, { force: false });
     result.removedCaches.push(cache);
   } catch (error) {
@@ -335,6 +432,9 @@ export async function deleteSessionData(sessionId, options = {}) {
   if (result.removedDirs.length === 0 && result.keptDirs.length === 0 && result.removedCaches.length === 0 && !result.workspaceUpdated && !projectResult) {
     throw Object.assign(new Error(`未找到会话 ${id}；sessionsRoot=${sessions}`), { status: 404 });
   }
+  if (keepFiles && foundSessionDirs > 0 && result.keptDirs.length === 0) {
+    throw Object.assign(new Error(`会话目录保留失败：${result.warnings.join('；') || '未知原因'}`), { status: 500 });
+  }
   if (result.deleteFiles && foundSessionDirs > 0 && result.removedDirs.length === 0) {
     throw Object.assign(new Error(`会话目录删除失败：${result.warnings.join('；') || '未知原因'}`), { status: 500 });
   }
@@ -347,6 +447,24 @@ async function handleScan(request, config) {
   catch { return Response.json({ ok: false, error: "请求体不是 JSON" }, { status: 400 }); }
   try {
     return Response.json({ ok: true, result: await scanSessionFiles(body && body.sessionId, config) });
+  } catch (error) {
+    const status = error && Number.isInteger(error.status) ? error.status : 500;
+    return Response.json({ ok: false, error: error && error.message ? error.message : String(error) }, { status });
+  }
+}
+
+async function handleInfo(_request, config) {
+  const { home, sessions, storages } = roots(config);
+  return Response.json({ ok: true, result: { home, sessionsRoot: sessions, storagesRoot: storages } });
+}
+
+async function handleReattach(request, config) {
+  let body;
+  try { body = await request.json(); }
+  catch { return Response.json({ ok: false, error: "请求体不是 JSON" }, { status: 400 }); }
+  try {
+    const result = await reattachSession(body && body.sessionId, { ...config, registry: config.registry });
+    return Response.json({ ok: true, result });
   } catch (error) {
     const status = error && Number.isInteger(error.status) ? error.status : 500;
     return Response.json({ ok: false, error: error && error.message ? error.message : String(error) }, { status });
@@ -375,12 +493,41 @@ export const inject = ["connection", "workspaceRegistry"];
 export function apply(ctx, config = {}) {
   ctx.effect(
     () => ctx.connection.fetch.register({
+      path: "/api/session-delete/info",
+      methods: ["GET"],
+      requestBody: "buffered",
+      fetch: (request) => handleInfo(request, config),
+    }),
+    "session-delete: GET /api/session-delete/info",
+  );
+  ctx.effect(
+    () => ctx.connection.fetch.register({
       path: "/api/session-delete/scan",
       methods: ["POST"],
       requestBody: "buffered",
       fetch: (request) => handleScan(request, config),
     }),
     "session-delete: POST /api/session-delete/scan",
+  );
+  ctx.effect(
+    () => ctx.connection.fetch.register({
+      path: "/api/session-delete/reattach",
+      methods: ["POST"],
+      requestBody: "buffered",
+      fetch: (request) => handleReattach(request, { ...config, registry: ctx.workspaceRegistry }),
+    }),
+    "session-delete: POST /api/session-delete/reattach",
+  );
+  ctx.effect(
+    () => {
+      const timer = setTimeout(() => {
+        restoreMarkedSessions({ ...config, registry: ctx.workspaceRegistry }).catch((error) => {
+          ctx.logger?.warn?.(`session-delete restore marked sessions failed: ${error}`);
+        });
+      }, 1200);
+      return () => clearTimeout(timer);
+    },
+    "session-delete: restore marked sessions",
   );
   ctx.effect(
     () => ctx.connection.fetch.register({
