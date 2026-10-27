@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session Delete",
+    "description": "Permanently delete a session, its log, projection cache and workspace references."
+  }
+}
