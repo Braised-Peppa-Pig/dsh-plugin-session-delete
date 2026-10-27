@@ -63,10 +63,11 @@ export async function deleteSessionData(sessionId, options = {}) {
   if (!id) throw Object.assign(new Error("非法会话 ID"), { status: 400 });
   const { home, sessions, storages } = roots(options);
   const keepFiles = options.deleteFiles === false;
-  const result = { id, deleteFiles: !keepFiles, removedDirs: [], keptDirs: [], removedCaches: [], workspaceUpdated: false, warnings: [] };
+  const result = { id, deleteFiles: !keepFiles, removedDirs: [], keptDirs: [], removedCaches: [], workspaceUpdated: false, warnings: [], sessionsRoot: sessions };
   const keptRoot = keepFiles ? path.join(home, "deleted-sessions", `${id}-${Date.now()}`) : null;
 
   let entries = [];
+  let foundSessionDirs = 0;
   try { entries = await fs.readdir(sessions, { withFileTypes: true }); }
   catch (error) {
     if (error && error.code !== "ENOENT") throw error;
@@ -81,13 +82,16 @@ export async function deleteSessionData(sessionId, options = {}) {
     try {
       const stat = await fs.lstat(dir);
       if (!stat.isDirectory()) continue;
+      foundSessionDirs += 1;
       if (keepFiles) {
         const target = path.join(keptRoot, entry.name, id);
         await fs.mkdir(path.dirname(target), { recursive: true });
         await fs.rename(dir, target);
         result.keptDirs.push(target);
       } else {
-        await fs.rm(dir, { recursive: true, force: false, maxRetries: 2 });
+        await fs.rm(dir, { recursive: true, force: true, maxRetries: 5 });
+        const remains = await fs.lstat(dir).then(() => true).catch(() => false);
+        if (remains) throw new Error(`目录仍存在：${dir}`);
         result.removedDirs.push(dir);
       }
     } catch (error) {
@@ -104,19 +108,41 @@ export async function deleteSessionData(sessionId, options = {}) {
     if (!error || error.code !== "ENOENT") result.warnings.push(`删除投影缓存失败：${error.message}`);
   }
 
-  const workspaceFile = path.join(storages, "workspace.json");
-  try {
-    const workspace = await readJson(workspaceFile, null);
-    if (workspace && removeSessionRefs(workspace, id)) {
-      await writeJsonAtomic(workspaceFile, workspace);
-      result.workspaceUpdated = true;
+  // Preferred: mutate the live Workspace registry so the sidebar updates without
+  // restarting DSH. Fall back to the durable file for unit tests/older hosts.
+  let registryDetached = false;
+  if (options.registry && typeof options.registry.list === "function") {
+    try {
+      for (const workspace of options.registry.list()) {
+        if (Array.isArray(workspace.sessionIds) && workspace.sessionIds.includes(id)) {
+          await workspace.detachSession(id);
+          registryDetached = true;
+        }
+      }
+      if (registryDetached) result.workspaceUpdated = true;
+    } catch (error) {
+      result.warnings.push(`更新 Workspace registry 失败：${error.message}`);
     }
-  } catch (error) {
-    result.warnings.push(`更新 workspace.json 失败：${error.message}`);
+  }
+  if (!registryDetached) {
+    const workspaceFile = path.join(storages, "workspace.json");
+    try {
+      const workspace = await readJson(workspaceFile, null);
+      if (workspace && removeSessionRefs(workspace, id)) {
+        await writeJsonAtomic(workspaceFile, workspace);
+        result.workspaceUpdated = true;
+      }
+    } catch (error) {
+      result.warnings.push(`更新 workspace.json 失败：${error.message}`);
+    }
   }
 
-  if (result.removedDirs.length === 0 && result.keptDirs.length === 0 && result.removedCaches.length === 0 && !result.workspaceUpdated) {
-    throw Object.assign(new Error(`未找到会话 ${id}`), { status: 404 });
+  const foundDirs = result.removedDirs.length + result.keptDirs.length;
+  if (foundDirs === 0 && result.removedCaches.length === 0 && !result.workspaceUpdated) {
+    throw Object.assign(new Error(`未找到会话 ${id}；sessionsRoot=${sessions}`), { status: 404 });
+  }
+  if (result.deleteFiles && foundSessionDirs > 0 && result.removedDirs.length === 0) {
+    throw Object.assign(new Error(`会话目录删除失败：${result.warnings.join('；') || '未知原因'}`), { status: 500 });
   }
   return result;
 }
@@ -137,7 +163,7 @@ async function handleDelete(request, config) {
   }
 }
 
-export const inject = ["connection"];
+export const inject = ["connection", "workspaceRegistry"];
 
 export function apply(ctx, config = {}) {
   ctx.effect(
@@ -145,7 +171,7 @@ export function apply(ctx, config = {}) {
       path: "/api/session-delete",
       methods: ["POST"],
       requestBody: "buffered",
-      fetch: (request) => handleDelete(request, config),
+      fetch: (request) => handleDelete(request, { ...config, registry: ctx.workspaceRegistry }),
     }),
     "session-delete: POST /api/session-delete",
   );
