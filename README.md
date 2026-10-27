@@ -178,5 +178,4 @@ package.json      DSH bundle/client manifest
 
 ## License
 
-No license has been declared yet. Add one before redistributing publicly if you
-need explicit reuse terms.
+Released under the **MIT License**. See [LICENSE](LICENSE).
