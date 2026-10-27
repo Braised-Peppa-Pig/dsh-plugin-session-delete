@@ -7,11 +7,11 @@
 
 <p align="center">Delete a DeepSeek Harness session, with an optional file-retention choice.</p>
 
-A DeepSeek Harness Web UI plugin that adds a **Delete session…** action to the
+A DeepSeek Harness Web UI plugin that adds a **Delete session** action to the
 Session row menu. The confirmation dialog lets you choose whether session files
 are permanently deleted or moved to a recovery folder.
 
-- Adds **Delete session…** to the Session row `...` menu.
+- Adds **Delete session** to the Session row `...` menu.
 - Custom confirmation dialog with a **Delete session files** checkbox.
 - Checked: permanently remove the session directory.
 - Unchecked: move the session directory to `DSH_HOME/deleted-sessions/`.
@@ -28,6 +28,32 @@ are permanently deleted or moved to a recovery folder.
 > The session list is file-backed. The current Harness build has no native
 > Session-delete API, so this plugin performs the cleanup on the Host.
 
+## Optional: delete project files written by this session
+
+The confirmation dialog has a second checkbox:
+
+**Delete project files written by this session** (off by default).
+
+When enabled, the plugin reads the session log and extracts explicit file-write
+records from:
+
+- `write`
+- `edit`
+- `apply_patch` (`*** Add File`, `*** Update File`, `*** Delete File`)
+
+It lists only files that:
+
+- were referenced by this session;
+- still exist;
+- resolve inside that session's `cwd` workspace.
+
+Every file is unchecked initially. Use **Select all** if needed. The Host
+re-validates the list at delete time. Files outside the workspace, symlinks
+escaping it, and files not present in the write log are never deleted.
+
+Shell commands that create files through `pwsh`/`bash` are not explicit write
+records and are not included. Subagent sessions have their own logs.
+
 ## Install
 
 ### Option A — DSH Web UI (recommended)
@@ -39,7 +65,7 @@ are permanently deleted or moved to a recovery folder.
    - or the **absolute path** to a local clone of this repository.
 3. Install the plugin.
 4. **Fully quit and restart DSH.**
-5. Open a Session row `...` menu and choose **Delete session…**.
+5. Open a Session row `...` menu and choose **Delete session**.
 
 ### Option B — CLI
 
@@ -78,7 +104,7 @@ repository are the runtime files.
 
 ## Verify after restart
 
-1. The Session `...` menu contains **Delete session…**.
+1. The Session `...` menu contains **Delete session**.
 2. Clicking it opens a custom dialog, not a native browser confirm.
 3. The dialog has a **Delete session files** checkbox.
 4. Cancel leaves everything untouched.
@@ -93,7 +119,7 @@ If the menu item is missing:
 
 1. Hover a Session row.
 2. Open `...`.
-3. Choose **Delete session…**.
+3. Choose **Delete session**.
 4. Choose whether to delete files.
 5. Confirm.
 
