@@ -85,9 +85,10 @@ window.__ModuleLoader__.load({
       const item = useConfirmState();
       const [deleteFiles, setDeleteFiles] = React.useState(true);
       const [busy, setBusy] = React.useState(false);
+      const [error, setError] = React.useState('');
 
       React.useEffect(() => {
-        if (item) { setDeleteFiles(true); setBusy(false); }
+        if (item) { setDeleteFiles(true); setBusy(false); setError(''); }
       }, [item && item.requestId]);
 
       React.useEffect(() => {
@@ -110,19 +111,13 @@ window.__ModuleLoader__.load({
           const data = await response.json().catch(() => ({}));
           if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
           const result = data.result || {};
-          const warnings = Array.isArray(result.warnings) && result.warnings.length
-            ? `\n警告：${result.warnings.join('；')}`
-            : '';
-          const fileLine = deleteFiles
-            ? `已永久删除会话目录 ${result.removedDirs?.length || 0} 个。`
-            : (result.keptDirs?.length
-              ? `文件已保留到 ${result.keptDirs[0]}（${result.keptDirs.length} 个目录）。`
-              : '文件未能移动到保留目录，请检查警告。');
-          window.alert(`会话已从列表移除。\n${fileLine}\n投影缓存已清理。${warnings}`);
+          if (Array.isArray(result.warnings) && result.warnings.length) {
+            console.warn('[session-delete]', result.warnings.join('; '));
+          }
           closeConfirm();
           location.reload();
         } catch (error) {
-          window.alert(`删除失败：${error.message || error}`);
+          setError(error.message || String(error));
           setBusy(false);
         }
       };
@@ -145,6 +140,7 @@ window.__ModuleLoader__.load({
       const textStyle = { margin: '8px 0 0', fontSize: '13px', lineHeight: '20px' };
       const row = { display: 'flex', alignItems: 'flex-start', gap: '8px', margin: '16px 0', lineHeight: 1.5 };
       const note = { color: 'var(--dsw-alias-label-secondary, #57606a)', fontSize: '12px', lineHeight: '18px', margin: '6px 0 0' };
+      const errorStyle = { color: 'var(--dsw-alias-state-error-primary, #cf222e)', fontSize: '12px', lineHeight: '18px', margin: '10px 0 0' };
       const actions = { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' };
       const baseButton = {
         height: '32px', padding: '0 14px', borderRadius: '6px',
@@ -188,6 +184,7 @@ window.__ModuleLoader__.load({
             h('br'),
             '正在运行的会话请先停止，不要删除当前会话。'
           ),
+          error ? h('div', { style: errorStyle, role: 'alert' }, `删除失败：${error}`) : null,
           h('div', { style: actions },
             h('button', { type: 'button', style: cancelStyle, disabled: busy, onClick: closeConfirm }, '取消'),
             h('button', { type: 'button', style: deleteStyle, disabled: busy, onClick: confirm }, busy ? '处理中…' : (deleteFiles ? '永久删除' : '移除会话'))
