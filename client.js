@@ -84,11 +84,25 @@ window.__ModuleLoader__.load({
     function ConfirmOverlay() {
       const item = useConfirmState();
       const [deleteFiles, setDeleteFiles] = React.useState(true);
+      const [deleteProjectFiles, setDeleteProjectFiles] = React.useState(false);
+      const [scan, setScan] = React.useState(null);
+      const [scanBusy, setScanBusy] = React.useState(false);
+      const [scanError, setScanError] = React.useState('');
+      const [selectedFiles, setSelectedFiles] = React.useState(() => new Set());
       const [busy, setBusy] = React.useState(false);
       const [error, setError] = React.useState('');
 
       React.useEffect(() => {
-        if (item) { setDeleteFiles(true); setBusy(false); setError(''); }
+        if (item) {
+          setDeleteFiles(true);
+          setDeleteProjectFiles(false);
+          setScan(null);
+          setScanBusy(false);
+          setScanError('');
+          setSelectedFiles(new Set());
+          setBusy(false);
+          setError('');
+        }
       }, [item && item.requestId]);
 
       React.useEffect(() => {
@@ -100,13 +114,49 @@ window.__ModuleLoader__.load({
 
       if (!item) return null;
 
+      const runScan = async () => {
+        setScanBusy(true);
+        setScanError('');
+        setScan(null);
+        setSelectedFiles(new Set());
+        try {
+          const response = await fetch('/api/session-delete/scan', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionId: item.sessionId }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+          setScan(data.result || { files: [] });
+        } catch (error) {
+          setScanError(error.message || String(error));
+        } finally {
+          setScanBusy(false);
+        }
+      };
+
+      const toggleProjectFiles = (checked) => {
+        setDeleteProjectFiles(checked);
+        setError('');
+        if (checked) runScan();
+        else { setScan(null); setScanError(''); setSelectedFiles(new Set()); }
+      };
+
       const confirm = async () => {
+        if (deleteProjectFiles && !scan) {
+          setError('请先扫描会话文件，再选择要删除的项目文件。');
+          return;
+        }
         setBusy(true);
         try {
           const response = await fetch('/api/session-delete', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ sessionId: item.sessionId, deleteFiles }),
+            body: JSON.stringify({
+              sessionId: item.sessionId,
+              deleteFiles,
+              projectFiles: deleteProjectFiles ? [...selectedFiles] : [],
+            }),
           });
           const data = await response.json().catch(() => ({}));
           if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
@@ -148,6 +198,27 @@ window.__ModuleLoader__.load({
       const row = { display: 'flex', alignItems: 'flex-start', gap: '8px', margin: '16px 0', lineHeight: 1.5 };
       const note = { color: 'var(--dsw-alias-label-secondary, #57606a)', fontSize: '12px', lineHeight: '18px', margin: '6px 0 0' };
       const errorStyle = { color: 'var(--dsw-alias-state-error-primary, #cf222e)', fontSize: '12px', lineHeight: '18px', margin: '10px 0 0' };
+      const fileBox = {
+        border: '1px solid var(--dsw-alias-border-l4, #d0d7de)',
+        borderRadius: '6px',
+        margin: '10px 0 0',
+        maxHeight: '190px',
+        overflow: 'auto',
+        padding: '6px',
+      };
+      const fileRow = {
+        display: 'flex', alignItems: 'flex-start', gap: '7px',
+        padding: '4px 5px', borderRadius: '4px', fontSize: '12px', lineHeight: '17px',
+      };
+      const filePathStyle = {
+        fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
+        overflowWrap: 'anywhere',
+      };
+      const selectAllStyle = {
+        border: 'none', background: 'transparent', padding: '2px 4px',
+        color: 'var(--dsw-alias-link, #0969da)', cursor: 'pointer',
+        font: 'inherit', fontSize: '12px',
+      };
       const actions = { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' };
       const baseButton = {
         height: '32px', padding: '0 14px', borderRadius: '6px',
@@ -165,6 +236,18 @@ window.__ModuleLoader__.load({
         background: 'var(--dsw-alias-state-error-primary, #cf222e)',
         color: '#ffffff',
         opacity: busy ? 0.6 : 1,
+      };
+      const files = scan?.files || [];
+      const allFilesSelected = files.length > 0 && selectedFiles.size === files.length;
+      const toggleAllFiles = () => {
+        setSelectedFiles(allFilesSelected ? new Set() : new Set(files.map((file) => file.path)));
+      };
+      const toggleFile = (filePath, checked) => {
+        setSelectedFiles((current) => {
+          const next = new Set(current);
+          if (checked) next.add(filePath); else next.delete(filePath);
+          return next;
+        });
       };
 
       return h('div', { style: overlay, onClick: (event) => { if (event.target === event.currentTarget && !busy) closeConfirm(); } },
@@ -186,6 +269,46 @@ window.__ModuleLoader__.load({
               )
             )
           ),
+          h('label', { style: { ...row, marginTop: '-4px' } },
+            h('input', {
+              type: 'checkbox', checked: deleteProjectFiles, disabled: busy || scanBusy,
+              onChange: (event) => toggleProjectFiles(event.target.checked),
+              style: { marginTop: '2px' },
+            }),
+            h('span', null,
+              h('b', { style: { fontSize: '13px', fontWeight: 600 } }, '同时删除本会话写入的项目文件'),
+              h('div', { style: note },
+                '从会话日志提取 write / edit / apply_patch 记录，只列出当前工作区内仍存在的文件；默认不勾选。'
+              )
+            )
+          ),
+          deleteProjectFiles ? h('div', { style: { margin: '-8px 0 0 23px' } },
+            scanBusy ? h('div', { style: note }, '正在读取会话日志…') : null,
+            scanError ? h('div', { style: errorStyle, role: 'alert' }, `扫描失败：${scanError}`) : null,
+            scan && !scanBusy ? h('div', null,
+              h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' } },
+                h('span', { style: { ...note, margin: 0 } }, `待删除文件：${files.length} 个，已选 ${selectedFiles.size} 个`),
+                files.length ? h('button', { type: 'button', style: selectAllStyle, disabled: busy, onClick: toggleAllFiles }, allFilesSelected ? '取消全选' : '全选') : null
+              ),
+              files.length ? h('div', { style: fileBox },
+                files.map((file) => h('label', { key: file.path, style: fileRow },
+                  h('input', {
+                    type: 'checkbox',
+                    checked: selectedFiles.has(file.path),
+                    disabled: busy,
+                    onChange: (event) => toggleFile(file.path, event.target.checked),
+                    style: { marginTop: '2px' },
+                  }),
+                  h('span', { style: { minWidth: 0 } },
+                    h('span', { style: filePathStyle, title: file.path }, file.path),
+                    h('span', { style: { ...note, margin: '1px 0 0' } },
+                      `${file.action === 'write' ? '写入' : file.action === 'edit' ? '编辑' : '补丁'} · ${Math.max(1, Math.round(file.size / 1024))} KB`
+                    )
+                  )
+                ))
+              ) : h('div', { style: note }, '没有找到本会话写入、且仍在当前工作区内的文件。')
+            ) : null
+          ) : null,
           h('div', { style: note },
             '无论是否勾选，都会清理投影缓存、workspace.json 中的归档/固定/分组引用。',
             h('br'),
