@@ -12,7 +12,7 @@ Session row menu. The confirmation dialog lets you choose whether session files
 are permanently deleted or moved to a recovery folder.
 
 - Adds **Delete session** to the Session row `...` menu.
-- Custom confirmation dialog with a **Delete session files** checkbox.
+- Custom confirmation dialog with a **Delete session log/attachment directory** checkbox.
 - Checked: permanently remove the session directory.
 - Unchecked: move the session directory to `DSH_HOME/deleted-sessions/`.
 - Always removes the projection cache and workspace references.
@@ -25,6 +25,10 @@ are permanently deleted or moved to a recovery folder.
 | `DSH_HOME/storages/session_projcache/sessions/<sessionId>.json` | removed | removed |
 | `workspace.json` archived / pinned / grouped refs | removed | removed |
 
+> DSH_HOME is the DeepSeek Harness data directory. On Windows it defaults to
+> %USERPROFILE%\.dsh; on macOS/Linux it defaults to ~/.dsh. It can be
+> overridden with the DSH_HOME environment variable.
+>
 > The session list is file-backed. The current Harness build has no native
 > Session-delete API, so this plugin performs the cleanup on the Host.
 
@@ -106,7 +110,7 @@ repository are the runtime files.
 
 1. The Session `...` menu contains **Delete session**.
 2. Clicking it opens a custom dialog, not a native browser confirm.
-3. The dialog has a **Delete session files** checkbox.
+3. The dialog has a **Delete session log/attachment directory** checkbox.
 4. Cancel leaves everything untouched.
 
 If the menu item is missing:
@@ -127,7 +131,7 @@ If the menu item is missing:
 
 ## Recovery
 
-If **Delete session files** is unchecked, the directory is kept at:
+If **Delete session log/attachment directory** is unchecked, the directory is kept at:
 
 ```text
 DSH_HOME/deleted-sessions/<sessionId>-<timestamp>/<workspace>/<sessionId>/
