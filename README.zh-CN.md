@@ -11,7 +11,7 @@
 永久删除会话文件，或把文件移到可恢复目录。
 
 - 在左侧会话行 `...` 菜单增加 **删除会话**。
-- 自定义确认页，带 **同时删除会话文件** 勾选框。
+- 自定义确认页，带 **同时删除会话日志/附件目录** 勾选框。
 - 勾选：永久删除会话目录。
 - 不勾选：会话目录移到 `DSH_HOME/deleted-sessions/` 保留。
 - 两种情况都会清理投影缓存与 `workspace.json` 里的引用。
@@ -24,6 +24,10 @@
 | `DSH_HOME/storages/session_projcache/sessions/<sessionId>.json` | 清理 | 清理 |
 | `workspace.json` 归档/固定/分组引用 | 清理 | 清理 |
 
+> DSH_HOME 是 DeepSeek Harness 的数据目录。Windows 默认是
+> %USERPROFILE%\.dsh；macOS/Linux 默认是 ~/.dsh。也可以用 DSH_HOME
+> 环境变量覆盖。
+>
 > 会话列表由文件驱动。当前 Harness 没有原生 Session 删除 API，因此插件直接在
 > Host 侧清理文件与索引。
 
@@ -101,7 +105,7 @@ dsh plugin --profile "$DSH_PROFILE" add "file:/path/to/dsh-plugin-session-delete
 
 1. 会话 `...` 菜单里出现 **删除会话**。
 2. 点击后打开自定义确认页，而不是浏览器原生 confirm。
-3. 确认页有 **同时删除会话文件** 勾选框。
+3. 确认页有 **同时删除会话日志/附件目录** 勾选框。
 4. 取消不会删除任何内容。
 
 如果菜单项没有出现：
