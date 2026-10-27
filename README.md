@@ -137,9 +137,21 @@ If **Delete session log/attachment directory** is unchecked, the directory is ke
 DSH_HOME/deleted-sessions/<sessionId>-<timestamp>/<workspace>/<sessionId>/
 ```
 
-Move it back under `DSH_HOME/sessions/<workspace>/` to recover the log. The
-projection cache and workspace references are removed and will be rebuilt or
-must be re-added by DSH.
+Move the innermost `<sessionId>` directory back under
+`DSH_HOME/sessions/<workspace>/`.
+
+Then either:
+
+- restart DSH: the plugin keeps a `.session-delete.json` restore marker and
+  reattaches the Session to its original Workspace when the directory is back;
+- or open the Session row `...` menu and choose **Repair workspace membership**
+  (for older deletions that have no restore marker).
+
+The projection cache is removed and will be rebuilt. The log directory alone
+does not establish Workspace membership: DSH groups by `workspace.sessionIds`,
+not by the physical `sessions/` subdirectory. A restored Session without
+membership therefore appears under **Ungrouped** until it is attached.
+
 
 ## Compatibility
 
