@@ -21,6 +21,49 @@ window.__ModuleLoader__.load({
       publish(null);
     }
 
+    const HIDDEN_KEY = 'dsh-session-delete-hidden';
+    function readHidden() {
+      try {
+        const parsed = JSON.parse(sessionStorage.getItem(HIDDEN_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+      } catch { return []; }
+    }
+    function hiddenStyle() {
+      let style = document.querySelector('style[data-plugin="dsh-session-delete-hidden"]');
+      if (!style) {
+        style = document.createElement('style');
+        style.dataset.plugin = 'dsh-session-delete-hidden';
+        document.head.appendChild(style);
+      }
+      const ids = readHidden();
+      style.textContent = ids.map((id) => {
+        const safe = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, '\\$&');
+        return `[data-row-key="session:${safe}"]{display:none!important}`;
+      }).join('\n');
+    }
+    function hideSession(id) {
+      try {
+        const ids = readHidden();
+        if (!ids.includes(id)) ids.push(id);
+        sessionStorage.setItem(HIDDEN_KEY, JSON.stringify(ids));
+      } catch { /* ignore storage failures */ }
+      hiddenStyle();
+    }
+    function leaveDeletedConversation() {
+      // Prefer the app's own New Session command: it switches the right pane
+      // correctly and does not rely on a full document reload.
+      const buttons = [...document.querySelectorAll('button[aria-label], a[aria-label]')];
+      const newSession = buttons.find((element) => /新建会话|new session/i.test(element.getAttribute('aria-label') || ''));
+      if (newSession) {
+        newSession.click();
+        return;
+      }
+      const url = new URL(location.href);
+      url.pathname = '/';
+      url.search = '?deleted=' + Date.now();
+      location.replace(url.toString());
+    }
+
     function useConfirmState() {
       const [value, setValue] = React.useState(current);
       React.useEffect(() => {
@@ -91,6 +134,7 @@ window.__ModuleLoader__.load({
       const [selectedFiles, setSelectedFiles] = React.useState(() => new Set());
       const [busy, setBusy] = React.useState(false);
       const [error, setError] = React.useState('');
+      const [resultInfo, setResultInfo] = React.useState(null);
 
       React.useEffect(() => {
         if (item) {
@@ -102,6 +146,7 @@ window.__ModuleLoader__.load({
           setSelectedFiles(new Set());
           setBusy(false);
           setError('');
+          setResultInfo(null);
         }
       }, [item && item.requestId]);
 
@@ -167,16 +212,21 @@ window.__ModuleLoader__.load({
           // Remove the row immediately. The Host also detaches the live
           // Workspace entry, so a later list refresh will not bring it back.
           const row = document.querySelector(`[data-row-key="session:${item.sessionId}"]`);
-          const isCurrent = row?.getAttribute('aria-selected') === 'true'
-            || location.href.includes(item.sessionId);
           if (row) {
             row.style.display = 'none';
             row.setAttribute('aria-hidden', 'true');
           }
+          hideSession(item.sessionId);
+          if (!deleteFiles) {
+            const keptPath = Array.isArray(result.keptDirs) ? result.keptDirs[0] : '';
+            setResultInfo({ keptPath, sessionId: item.sessionId });
+            setBusy(false);
+            return;
+          }
           closeConfirm();
-          // If the deleted Session is open in the right pane, navigate away;
-          // otherwise its Conversation keeps rendering a deleted Session.
-          if (isCurrent || !row) location.href = '/';
+          // Always leave the current Conversation: a deleted Session must not
+          // stay mounted on the right, even when the sidebar row is gone.
+          leaveDeletedConversation();
         } catch (error) {
           setError(error.message || String(error));
           setBusy(false);
@@ -254,6 +304,30 @@ window.__ModuleLoader__.load({
         });
       };
 
+      if (resultInfo) {
+        return h('div', { style: overlay },
+          h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': '会话已移除', style: panel },
+            h('div', { style: titleStyle }, '会话已移除'),
+            h('p', { style: textStyle }, '会话已从列表移除，文件没有删除，而是保留在下面这个目录：'),
+            h('code', { style: { ...filePathStyle, display: 'block', marginTop: '10px', padding: '8px', background: 'var(--dsw-alias-bg-inset, #f6f8fa)', borderRadius: '6px', overflowWrap: 'anywhere', fontSize: '11px' } },
+              resultInfo.keptPath || 'DSH_HOME/deleted-sessions/<sessionId>-<timestamp>/<workspace>/<sessionId>/'
+            ),
+            h('div', { style: { ...note, marginTop: '12px' } },
+              '恢复方法：把最内层 <sessionId> 目录移回 DSH_HOME/sessions/<workspace>/，然后重启 DSH。',
+              h('br'),
+              '共享 attachments 没有被移动或删除。'
+            ),
+            h('div', { style: actions },
+              resultInfo.keptPath ? h('button', {
+                type: 'button', style: cancelStyle,
+                onClick: () => { navigator.clipboard?.writeText(resultInfo.keptPath).catch(() => {}); },
+              }, '复制路径') : null,
+              h('button', { type: 'button', style: deleteStyle, onClick: () => { closeConfirm(); leaveDeletedConversation(); } }, '关闭')
+            )
+          )
+        );
+      }
+
       return h('div', { style: overlay, onClick: (event) => { if (event.target === event.currentTarget && !busy) closeConfirm(); } },
         h('div', { role: 'dialog', 'aria-modal': 'true', 'aria-label': '删除会话', style: panel, onClick: (event) => event.stopPropagation() },
           h('div', { style: titleStyle }, '删除会话'),
@@ -265,11 +339,11 @@ window.__ModuleLoader__.load({
               style: { marginTop: '2px' },
             }),
             h('span', null,
-              h('b', { style: { fontSize: '13px', fontWeight: 600 } }, '同时删除会话文件'),
+              h('b', { style: { fontSize: '13px', fontWeight: 600 } }, '同时删除会话日志/附件目录'),
               h('div', { style: note },
                 deleteFiles
-                  ? '会话日志/附件目录会被永久删除，无法恢复。'
-                  : '会话目录会移到 DSH_HOME/deleted-sessions/ 保留，可手动恢复；列表记录与缓存仍会清理。'
+                  ? '删除 DSH_HOME/sessions/<workspace>/<sessionId>/ 目录（会话日志等），无法恢复。'
+                  : '不勾选：目录会移到 DSH_HOME/deleted-sessions/<sessionId>-<timestamp>/<workspace>/<sessionId>/ 保留；恢复时把最内层 <sessionId> 移回 DSH_HOME/sessions/<workspace>/。'
               )
             )
           ),
@@ -330,6 +404,10 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots'],
       apply(ctx) {
+        hiddenStyle();
+        ctx.effect(() => () => {
+          document.querySelector('style[data-plugin="dsh-session-delete-hidden"]')?.remove();
+        });
         ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item',
           id: 'session-delete',
