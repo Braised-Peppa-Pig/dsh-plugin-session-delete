@@ -114,8 +114,12 @@ window.__ModuleLoader__.load({
           if (Array.isArray(result.warnings) && result.warnings.length) {
             console.warn('[session-delete]', result.warnings.join('; '));
           }
+          // Remove the row immediately. The Host also detaches the live
+          // Workspace entry, so a later list refresh will not bring it back.
+          const row = document.querySelector(`[data-row-key="session:${item.sessionId}"]`);
+          if (row) row.remove();
           closeConfirm();
-          location.reload();
+          if (!row) location.reload();
         } catch (error) {
           setError(error.message || String(error));
           setBusy(false);
