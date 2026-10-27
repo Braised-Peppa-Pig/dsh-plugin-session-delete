@@ -78,7 +78,7 @@ window.__ModuleLoader__.load({
           textAlign: 'left',
           cursor: 'pointer',
         },
-      }, h(TrashIcon), h('span', null, '删除会话…'));
+      }, h(TrashIcon), h('span', null, '删除会话'));
     }
 
     function ConfirmOverlay() {
